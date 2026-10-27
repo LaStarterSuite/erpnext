@@ -387,6 +387,79 @@ class TestDunning(FrappeTestCase):
 		self.assertEqual(sales_invoice.status, "Overdue")
 		self.assertEqual(dunning.status, "Unresolved")
 
+<<<<<<< HEAD
+=======
+	def test_payment_against_invoice_with_multiple_overdue_installments_in_dunning(self):
+		"""
+		When an invoice has more than one overdue installment, its Dunning holds one
+		Overdue Payment row per installment. Submitting a Payment Entry for the invoice
+		must resolve the Dunning without raising a TimestampMismatchError caused by the
+		same Dunning being loaded and saved more than once.
+		"""
+		create_payment_terms_template_for_dunning()
+		# Post far enough in the past that BOTH installments (5 and 10 credit days) are overdue.
+		sales_invoice = create_sales_invoice_against_cost_center(
+			posting_date=add_days(today(), -15),
+			qty=1,
+			rate=100,
+			do_not_submit=True,
+		)
+		sales_invoice.payment_terms_template = "_Test 50-50 for Dunning"
+		sales_invoice.submit()
+
+		dunning = create_dunning_from_sales_invoice(sales_invoice.name)
+		# Two overdue installments -> two overdue payment rows for the same invoice.
+		self.assertEqual(len(dunning.overdue_payments), 2)
+		dunning.submit()
+		self.assertEqual(dunning.status, "Unresolved")
+
+		# Pay the invoice in full. This previously raised TimestampMismatchError on the Dunning.
+		pe = get_payment_entry("Sales Invoice", sales_invoice.name)
+		pe.reference_no, pe.reference_date = "3", nowdate()
+		pe.insert()
+		pe.submit()
+
+		sales_invoice.reload()
+		dunning.reload()
+		self.assertEqual(sales_invoice.outstanding_amount, 0)
+		self.assertEqual(dunning.status, "Resolved")
+
+	def test_payment_after_partial_invoice_payment_without_term_allocation(self):
+		create_payment_terms_template_for_dunning()
+		template = frappe.get_doc("Payment Terms Template", "_Test 50-50 for Dunning")
+		template.allocate_payment_based_on_payment_terms = 0
+		template.save()
+		self.addCleanup(template.db_set, "allocate_payment_based_on_payment_terms", 1)
+		invoice = create_sales_invoice_against_cost_center(
+			posting_date=add_days(today(), -15), qty=1, rate=100, do_not_submit=True
+		)
+		invoice.payment_terms_template = template.name
+		invoice.submit()
+		dunning = create_dunning_from_sales_invoice(invoice.name)
+		dunning.submit()
+		self.assertEqual(len(dunning.overdue_payments), 2)
+
+		partial_payment = get_payment_entry(invoice.doctype, invoice.name)
+		partial_payment.paid_amount = partial_payment.received_amount = 60
+		partial_payment.references[0].allocated_amount = 60
+		partial_payment.submit()
+		self.assertEqual(invoice.reload().outstanding_amount, 40)
+		self.assertEqual([row.outstanding for row in invoice.payment_schedule], [50, 50])
+
+		payment = get_payment_entry("Dunning", dunning.name)
+		self.assertEqual(payment.paid_amount, 40)
+		self.assertEqual(len(payment.references), 1)
+		self.assertEqual(payment.references[0].payment_term, invoice.payment_schedule[1].payment_term)
+		self.assertEqual(payment.references[0].allocated_amount, 40)
+		payment.submit()
+		self.assertEqual(invoice.reload().outstanding_amount, 0)
+		self.assertEqual(dunning.reload().status, "Resolved")
+		payment.cancel()
+		self.assertEqual(invoice.reload().outstanding_amount, 40)
+		self.assertEqual(dunning.reload().status, "Unresolved")
+		self.assertEqual(get_payment_entry("Dunning", dunning.name).paid_amount, 40)
+
+>>>>>>> 02f4361 (test(accounts): cover invoice allocations and dunning payments)
 	def test_dunning_resolution_from_credit_note(self):
 		"""
 		Test that dunning is resolved when a credit note is issued against the original invoice.
