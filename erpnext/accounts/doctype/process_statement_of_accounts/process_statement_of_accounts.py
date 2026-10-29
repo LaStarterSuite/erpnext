@@ -121,10 +121,34 @@ class ProcessStatementOfAccounts(Document):
 
 			if self.report == "General Ledger":
 				self.to_date = scheduled_date
-				self.from_date = add_months(self.to_date, -1 * self.filter_duration)
 			else:
 				self.posting_date = scheduled_date
 
+<<<<<<< HEAD
+=======
+		if self.enable_auto_email and self.report == "General Ledger" and self.to_date:
+			self.from_date = add_months(self.to_date, -1 * self.filter_duration)
+
+		if self.print_format:
+			pf = frappe.db.get_value(
+				"Print Format",
+				self.print_format,
+				["print_format_type", "print_format_for", "report", "disabled"],
+				as_dict=True,
+			)
+			if not pf:
+				frappe.throw(title=_("Invalid Print Format"), msg=_("Selected Print Format does not exist."))
+			if pf.print_format_type != "Jinja":
+				frappe.throw(title=_("Invalid Print Format"), msg=_("Print Format Type should be Jinja."))
+			if pf.print_format_for != "Report" or pf.report != self.report or pf.disabled:
+				frappe.throw(
+					title=_("Invalid Print Format"),
+					msg=_(
+						"Print Format must be an enabled Report Print Format matching the selected Report."
+					),
+				)
+
+>>>>>>> 572f6f7 (fix(accounts): refresh scheduled statement periods)
 	def validate_account(self):
 		if not self.account:
 			return
